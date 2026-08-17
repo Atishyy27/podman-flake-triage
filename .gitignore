@@ -1,0 +1,6 @@
+.cache/
+__pycache__/
+*.pyc
+.pytest_cache/
+report.md
+esc_debug*.txt

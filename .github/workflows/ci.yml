@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  schedule:
+    # Re-run against live Podman CI weekly. If Podman changes its log format or job
+    # naming, this is what catches it, rather than the tool silently degrading.
+    - cron: '0 6 * * 1'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install pytest
+      - name: unit tests
+        run: python -m pytest tests/ -v
+      - name: cli is importable and self-describing
+        run: |
+          python -m flaketriage.cli --help
+          python -m flaketriage.cli report --help
+
+  smoke-live:
+    # Proves the tool still works against real Podman CI, not just fixtures.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: fetch + classify 3 real failed runs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m flaketriage.cli --runs 3 fetch
+          python -m flaketriage.cli --runs 3 report --out live-report.md
+          echo "### Live smoke report" >> $GITHUB_STEP_SUMMARY
+          cat live-report.md >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: live-report
+          path: live-report.md
