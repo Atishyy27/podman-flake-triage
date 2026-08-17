@@ -23,6 +23,10 @@ REPO = "podman-container-tools/podman"
 # not a real failure, and counting it drowns the actual signal.
 AGGREGATE_JOBS = {"Total Success"}
 
+# Bot/meta jobs that are not Podman test lanes. Counting them inflates both the
+# denominator and the UNKNOWN rate with things no maintainer would ever triage.
+BOT_JOB_PREFIXES = ("copilot-", "claude-", "dependabot")
+
 
 @dataclass
 class FailedJob:
@@ -164,7 +168,8 @@ def failed_jobs(cache: Cache, run_id: int) -> list[FailedJob]:
     for job in cached:
         if job.get("conclusion") != "failure":
             continue
-        if job.get("name") in AGGREGATE_JOBS:
+        name = job.get("name", "")
+        if name in AGGREGATE_JOBS or name.lower().startswith(BOT_JOB_PREFIXES):
             continue
         failed_step = next(
             (
@@ -195,7 +200,9 @@ def job_log(cache: Cache, job_id: int) -> str:
         return cached
     try:
         raw = _get(f"/repos/{REPO}/actions/jobs/{job_id}/logs", accept="application/vnd.github.raw")
-        text = raw.decode("utf-8", errors="replace")
+        # utf-8-sig strips a leading BOM. Some real Podman logs carry one, and it
+        # both defeats the timestamp regex on line 0 and crashes cp1252 stdout.
+        text = raw.decode("utf-8-sig", errors="replace")
     except urllib.error.HTTPError as exc:
         # Logs expire; treat as empty rather than aborting a whole sweep.
         if exc.code in (404, 410):

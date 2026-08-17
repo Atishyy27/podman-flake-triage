@@ -69,7 +69,8 @@ RULES: list[tuple[str, str, re.Pattern[str], str]] = [
         "oom_or_vm",
         re.compile(
             r"(out of memory)|(Cannot allocate memory)|(oom-kill)"
-            r"|(failed to start .*(vm|lima|qemu))",
+            r"|(failed to start .*(vm|lima|qemu))"
+            r"|(cannot access '/dev/kvm')|(/dev/kvm.*no such file)",
             re.I,
         ),
         "high",
@@ -177,7 +178,7 @@ def classify(excerpt: Excerpt, job_name: str = "", failed_step: str = "") -> Ver
     # log rule fired at all.
     step = (failed_step or "").lower()
     name = (job_name or "").lower()
-    if "build" in step or name.startswith("build "):
+    if "build" in step or "vendor" in step or name.startswith("build "):
         return Verdict("BUILD", f"failed step: {failed_step}", "step_name_build", "low")
     if "validate" in step or "lint" in name:
         return Verdict("LINT", f"failed step: {failed_step}", "step_name_lint", "low")

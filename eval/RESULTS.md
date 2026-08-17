@@ -5,20 +5,22 @@ Run 18 Aug 2026 against `podman-container-tools/podman` live CI. Full report:
 
 ## Sample
 
-25 most recent failed workflow runs → **42 failed jobs** after excluding the
-`Total Success` required-checks gate.
+25 most recent failed workflow runs → **41 failed jobs** after excluding the
+`Total Success` required-checks gate and GitHub bot jobs (`copilot-*`), which are not
+Podman test lanes and only inflate the denominator.
 
 ## Classification
 
 | Category | Count | Share |
 |---|---:|---:|
-| `TEST_FAILURE` | 29 | 69% |
-| `UNKNOWN` | 5 | 12% |
-| `BUILD` | 5 | 12% |
+| `TEST_FAILURE` | 29 | 71% |
+| `BUILD` | 7 | 17% |
 | `LINT` | 2 | 5% |
 | `TIMEOUT_HANG` | 1 | 2% |
+| `UNKNOWN` | 1 | 2% |
+| `INFRA_RESOURCE` | 1 | 2% |
 
-**12% UNKNOWN is reported, not hidden.** Each one is a rule that has not been written,
+**2% UNKNOWN is reported, not hidden.** Each one is a rule that has not been written,
 not a failure that has been explained. Any tool of this kind can reach 0% UNKNOWN by
 guessing; the number is only meaningful if it is allowed to be non-zero.
 
@@ -39,6 +41,23 @@ weak evidence — they may well be tracked under different wording, and title ma
 not a real check. **Not claiming these are undiscovered.** Confirming that properly means
 reading the 42 issues, which is exactly the kind of manual triage this tool is meant to
 reduce, and is listed as follow-up work rather than asserted as a finding.
+
+## A third pass: adversarial testing
+
+A separate hostile pass wrote 39 more tests and found four real defects, three of them
+confirmed against specific cached logs rather than invented inputs:
+
+- `Check make vendor is clean` failures fell to `UNKNOWN`, even though the BUILD
+  category's own description says "compile or **vendor** step". Jobs `94794824043`,
+  `94818536544`.
+- A runner missing `/dev/kvm` fell to `UNKNOWN`, though "could not start a VM" is
+  literally the `INFRA_RESOURCE` description. Job `95398591212`.
+- Some real logs carry a UTF-8 BOM, which defeated the timestamp regex on line 0 and
+  crashed `print()` on a cp1252 Windows console.
+- Backticks inside evidence closed the markdown inline-code span early, which matters
+  because Go tooling quotes identifiers in backticks constantly.
+
+Fixing those took **UNKNOWN from 12% to 2%** on the same 25 runs.
 
 ## Two bugs that only real data exposed
 

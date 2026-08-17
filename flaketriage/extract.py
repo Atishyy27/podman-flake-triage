@@ -81,7 +81,7 @@ def strip_timestamps(log: str) -> list[str]:
     it, and ANSI codes can wrap either.
     """
     out: list[str] = []
-    for raw in log.splitlines():
+    for raw in log.lstrip("﻿").splitlines():
         ln = ANSI.sub("", raw)
         ln = TS.sub("", ln)
         ln = ELAPSED.sub("", ln)

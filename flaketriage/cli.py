@@ -58,7 +58,10 @@ def cmd_report(args: argparse.Namespace) -> int:
         Path(args.out).write_text(text, encoding="utf-8")
         print(f"wrote {args.out} ({len(rows)} failed jobs)", file=sys.stderr)
     else:
-        print(text)
+        # Windows consoles default to cp1252; a BOM or any non-Latin script in a
+        # job name would otherwise raise UnicodeEncodeError instead of printing.
+        enc = sys.stdout.encoding or "utf-8"
+        sys.stdout.write(text.encode(enc, errors="replace").decode(enc, errors="replace"))
     return 0
 
 

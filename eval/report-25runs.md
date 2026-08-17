@@ -1,19 +1,20 @@
 # Podman CI flake triage
 
-Sampled the **25** most recent failed workflow runs in `podman-container-tools/podman`, yielding **42** failed jobs (the `Total Success` required-checks gate is excluded, it is an aggregate and not a real failure).
+Sampled the **25** most recent failed workflow runs in `podman-container-tools/podman`, yielding **41** failed jobs (the `Total Success` required-checks gate is excluded, it is an aggregate and not a real failure).
 
 
 ## Failures by mechanism
 
 | Category | Count | Share | What it means |
 |---|---:|---:|---|
-| `TEST_FAILURE` | 29 | 69% | A test asserted and the assertion did not hold |
-| `UNKNOWN` | 5 | 12% | No rule matched; needs a human |
-| `BUILD` | 5 | 12% | Compile or vendor step failed; the suite never ran |
+| `TEST_FAILURE` | 29 | 71% | A test asserted and the assertion did not hold |
+| `BUILD` | 7 | 17% | Compile or vendor step failed; the suite never ran |
 | `LINT` | 2 | 5% | Static analysis, formatting, or validation gate |
 | `TIMEOUT_HANG` | 1 | 2% | Job or test exceeded its time budget |
+| `UNKNOWN` | 1 | 2% | No rule matched; needs a human |
+| `INFRA_RESOURCE` | 1 | 2% | Runner ran out of disk, memory, or could not start a VM |
 
-`UNKNOWN` is 12% of the sample. That number is the honest measure of how far the rules go; every entry in it is a rule that has not been written yet, not a failure that has been explained.
+`UNKNOWN` is 2% of the sample. That number is the honest measure of how far the rules go; every entry in it is a rule that has not been written yet, not a failure that has been explained.
 
 
 ## Recurring: same lane, same mechanism, more than once
@@ -27,7 +28,7 @@ Sampled the **25** most recent failed workflow runs in `podman-container-tools/p
 | `sys local rootless` | `TEST_FAILURE` | 3 | `not ok 317 \|450\| podman detects correct tty size in 2846ms` |
 | `build fedora-current` | `BUILD` | 3 | `failed step: Run test on lima` |
 | `Validate source code` | `LINT` | 2 | `##[error]pkg/domain/infra/abi/images.go:29:1: File is not properly formatted (gofumpt)` |
-| `Validate source code` | `UNKNOWN` | 2 | `` |
+| `Validate source code` | `BUILD` | 2 | `failed step: Check make vendor is clean` |
 
 These are the quarantine candidates. A lane that fails the same way repeatedly across unrelated PRs is not being broken by those PRs.
 
@@ -36,11 +37,14 @@ These are the quarantine candidates. A lane that fails the same way repeatedly a
 
 | Run | Job | Mechanism | Rule | Confidence | Evidence |
 |---|---|---|---|---|---|
+| [31816252486](https://github.com/podman-container-tools/podman/actions/runs/31816252486/job/94818536544) | `Validate source code changes` | `BUILD` | `step_name_build` | low | `failed step: Check make vendor is clean` |
+| [31809018650](https://github.com/podman-container-tools/podman/actions/runs/31809018650/job/94794824043) | `Validate source code changes` | `BUILD` | `step_name_build` | low | `failed step: Check make vendor is clean` |
 | [31975812388](https://github.com/podman-container-tools/podman/actions/runs/31975812388/job/95363694196) | `build fedora-current / lima` | `BUILD` | `step_name_build` | low | `failed step: Run test on lima` |
 | [31833900347](https://github.com/podman-container-tools/podman/actions/runs/31833900347/job/95361225942) | `build fedora-current / lima` | `BUILD` | `step_name_build` | low | `failed step: Run test on lima` |
 | [31830148124](https://github.com/podman-container-tools/podman/actions/runs/31830148124/job/94863630984) | `build fedora-current / lima` | `BUILD` | `step_name_build` | low | `failed step: Run test on lima` |
 | [31869969647](https://github.com/podman-container-tools/podman/actions/runs/31869969647/job/94976976480) | `windows installer hyperv` | `BUILD` | `step_name_build` | low | `failed step: Build docs` |
 | [31869969647](https://github.com/podman-container-tools/podman/actions/runs/31869969647/job/94976976446) | `windows installer wsl` | `BUILD` | `step_name_build` | low | `failed step: Build docs` |
+| [31911449880](https://github.com/podman-container-tools/podman/actions/runs/31911449880/job/95398591212) | `farm rootless fedora-current / lima` | `INFRA_RESOURCE` | `oom_or_vm` | high | `chown: cannot access '/dev/kvm': No such file or directory` |
 | [32064420161](https://github.com/podman-container-tools/podman/actions/runs/32064420161/job/95492950874) | `Validate source code changes` | `LINT` | `validation_gate` | medium | `##[error]pkg/domain/infra/abi/images.go:29:1: File is not properly formatted (gofumpt)` |
 | [32049160036](https://github.com/podman-container-tools/podman/actions/runs/32049160036/job/95444081716) | `Validate source code changes` | `LINT` | `validation_gate` | medium | `##[error]cmd/rootlessport/main.go:300:4: The copy of the 'for' variable "protocol" can be ` |
 | [31879825400](https://github.com/podman-container-tools/podman/actions/runs/31879825400/job/95000741570) | `Validate source code changes` | `TEST_FAILURE` | `bats_failure` | high | `not ok 3 PR 8685 - multiple commits, no tests` |
@@ -73,8 +77,4 @@ These are the quarantine candidates. A lane that fails the same way repeatedly a
 | [31821754525](https://github.com/podman-container-tools/podman/actions/runs/31821754525/job/94843946950) | `sys remote rootless fedora-current / lima` | `TEST_FAILURE` | `bats_failure` | high | `not ok 51 [032] podman sigproxy test: exec in 12855ms` |
 | [32066350407](https://github.com/podman-container-tools/podman/actions/runs/32066350407/job/95503029355) | `windows machine hyperv` | `TEST_FAILURE` | `ginkgo_failure` | high | `[FAIL] podman machine set [It] set machine cpus, disk, memory` |
 | [32032269509](https://github.com/podman-container-tools/podman/actions/runs/32032269509/job/95397791367) | `macos machine libkrun` | `TIMEOUT_HANG` | `timeout` | medium | `##[error]The operation was canceled.` |
-| [31816252486](https://github.com/podman-container-tools/podman/actions/runs/31816252486/job/94818536544) | `Validate source code changes` | `UNKNOWN` | `no_rule_matched` | low | `` |
-| [31809018650](https://github.com/podman-container-tools/podman/actions/runs/31809018650/job/94794824043) | `Validate source code changes` | `UNKNOWN` | `no_rule_matched` | low | `` |
-| [32044569797](https://github.com/podman-container-tools/podman/actions/runs/32044569797/job/95429662818) | `copilot-pull-request-reviewer` | `UNKNOWN` | `no_rule_matched` | low | `` |
-| [31911449880](https://github.com/podman-container-tools/podman/actions/runs/31911449880/job/95398591212) | `farm rootless fedora-current / lima` | `UNKNOWN` | `no_rule_matched` | low | `` |
 | [32025596823](https://github.com/podman-container-tools/podman/actions/runs/32025596823/job/95393218275) | `sys local rootless fedora-rawhide / lima` | `UNKNOWN` | `no_rule_matched` | low | `` |

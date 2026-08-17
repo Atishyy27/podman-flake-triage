@@ -357,8 +357,8 @@ class TestMarkdownInjection:
         # Every data row for this run must still have exactly 6 columns (7 pipes).
         for line in out.splitlines():
             if line.startswith("| [1]"):
-                assert "\|" in line, line
-                assert line.count("|") - line.count("\|") == 7, line
+                assert "\\|" in line, line
+                assert line.count("|") - line.count("\\|") == 7, line
 
     def test_BUG_job_name_pipe_is_NOT_escaped_and_breaks_the_table(self):
         """CONFIRMED BUG: report.py escapes `evidence` for '|' in both table
@@ -438,39 +438,43 @@ class TestMarkdownInjection:
 
 class TestWindowsConsoleCrash:
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows-console-specific defect")
-    def test_BUG_report_text_with_non_cp1252_char_crashes_default_print(self):
-        """CONFIRMED CRASH on this exact environment (Windows, Python 3.10.11,
-        sys.stdout.encoding == 'cp1252' by default). `cli.cmd_report()` does
-        `print(text)` when --out is not given. Any non-Latin-1 character
-        anywhere in a job name or evidence string (unicode contributor names,
-        smart quotes, emoji in commit messages, or - proven below - a literal
-        UTF-8 BOM that survives decoding of a real cached Podman log) makes
-        that print() raise UnicodeEncodeError and crash the whole CLI.
+    def test_BUG_report_text_with_bom_crashes_default_print(self):
+        """CONFIRMED CRASH on this exact environment (Windows, Python 3.10.11).
+        `cli.cmd_report()` does `print(text)` when --out is not given.
 
-        Real proof this isn't hypothetical: .cache/logs/95398591212.log
-        (a real cached Podman CI log) starts with a literal U+FEFF BOM
-        character, because ingest.job_log() does
-        `raw.decode("utf-8", errors="replace")`, which does NOT strip a BOM
-        (only 'utf-8-sig' does). If that BOM, or any other non-cp1252
-        character, ever lands in classify() evidence or a job name, `report`
-        without --out crashes on Windows.
+        Checked against `sys.__stdout__` (the real, un-swapped stream), not
+        `sys.stdout`, because pytest replaces `sys.stdout` with a UTF-8
+        capture object - testing THAT would prove nothing about what a
+        maintainer's terminal actually does. `sys.__stdout__.encoding` is
+        'cp1252' and `.errors` is 'surrogateescape' on this box, confirmed
+        both under Git Bash and native cmd.exe/PowerShell.
+
+        First adversarial pick (em dash + smart quotes, U+2014/U+2018/U+2019)
+        was a DUD: cp1252 (Windows-1252) is a superset of Latin-1 that
+        specifically includes Microsoft's "smart" typography in its 0x80-0x9F
+        range, so those encode fine. A real non-cp1252 character is needed -
+        this test uses one that isn't hypothetical: .cache/logs/95398591212.log
+        (a real cached Podman CI log) starts with a literal U+FEFF BOM,
+        because ingest.job_log() does `raw.decode("utf-8", errors="replace")`,
+        which does NOT strip a BOM (only 'utf-8-sig' does). If that BOM, or
+        any other non-cp1252 character (Chinese/Cyrillic/Devanagari in a
+        contributor's name, emoji in a commit message), ever lands in
+        classify() evidence or a job name, `report` without --out crashes.
         """
-        if sys.stdout.encoding != "cp1252":
-            import pytest; pytest.skip("stdout is not cp1252 on this box")
-        assert sys.stdout.encoding == "cp1252", (
-            f"this box's stdout encoding is {sys.stdout.encoding!r}, not the "
-            f"cp1252 this test assumes - re-verify before trusting the result"
-        )
+        enc, err = sys.__stdout__.encoding, sys.__stdout__.errors
+        if enc.lower() not in ("cp1252", "windows-1252"):
+            pytest.skip(f"real stdout encoding is {enc!r} on this box, not cp1252")
+
         v = classify(extract(_log("--- FAIL: TestUnicode (0.00s)\n")))
-        v.evidence = "assertion failed — got ‘foo’ want ‘bar’"  # em dash, smart quotes
+        v.evidence = "assertion failed ﻿ BOM snuck into evidence"
         rows = [Row(1, 2, "int local root fedora-current / lima", "Test", v, None, "http://x")]
         text = render(rows, 1)
+        assert "﻿" in text  # sanity: md_cell doesn't strip it either
 
-        # Reproduce cmd_report's exact no-`--out` code path: print(text) to
-        # REAL stdout. This is the actual bug, not a simulation.
+        # Reproduce cmd_report's exact no-`--out` code path against the REAL
+        # underlying console codec, bypassing pytest's stdout swap.
         with pytest.raises(UnicodeEncodeError):
-            sys.stdout.write(text)
-            sys.stdout.flush()
+            text.encode(enc, errors=err)
 
     def test_BOM_survives_ingest_decode_and_defeats_first_line_timestamp_strip(self):
         """Minor correctness bug, proven against real cached data: the raw
@@ -483,10 +487,11 @@ class TestWindowsConsoleCrash:
         raw = p.read_text(encoding="utf-8", errors="replace")
         assert raw[0] == "﻿"
         lines = strip_timestamps(raw)
-        # every other line has its timestamp stripped (no leading digit-dash
-        # pattern survives); line 0 still has the full raw ISO timestamp
-        # because the BOM sits before it and defeats the '^\\d{4}...' anchor.
-        assert lines[0].startswith("﻿2026-"), lines[0][:40]
+        # FIXED: the BOM is stripped before splitting, so line 0's timestamp now comes
+        # off like every other line's. Previously the BOM sat before the digits and
+        # defeated the '^\d{4}...' anchor, leaving line 0 un-normalised.
+        assert not lines[0].startswith("﻿"), lines[0][:40]
+        assert not lines[0].startswith("2026-"), lines[0][:40]
         assert not lines[1].startswith("2026-")  # line 1 stripped normally
 
 
@@ -524,9 +529,11 @@ class TestRealCachedData:
             raw = p.read_text(encoding="utf-8", errors="replace")
             v = classify(extract(raw), job_name="Validate source code changes",
                          failed_step="Check make vendor is clean")
-            assert v.category == "UNKNOWN", (
-                f"job {job_id}: expected the documented bug (UNKNOWN), got "
-                f"{v.category} - has the vendor-step fallback been added?"
+            # FIXED: the metadata fallback now recognises a vendor step, which is what
+            # CATEGORIES["BUILD"] always claimed to cover ("Compile or vendor step").
+            assert v.category == "BUILD", (
+                f"job {job_id}: a failing 'Check make vendor is clean' step should be "
+                f"BUILD, got {v.category}"
             )
 
     def test_BUG_missing_dev_kvm_infra_failure_falls_to_unknown(self):
@@ -546,9 +553,10 @@ class TestRealCachedData:
         assert "cannot access '/dev/kvm'" in raw
         v = classify(extract(raw), job_name="farm  rootless fedora-current / lima",
                      failed_step="Run lima-vm/lima-actions/setup@55627e31b78637bf254a8b2a14da8ea7d12564e5")
-        assert v.category == "UNKNOWN", (
-            f"expected the documented bug (UNKNOWN for a missing /dev/kvm "
-            f"infra failure), got {v.category} - has this been fixed?"
+        # FIXED: a runner without /dev/kvm cannot start a VM, which is exactly what
+        # CATEGORIES["INFRA_RESOURCE"] describes.
+        assert v.category == "INFRA_RESOURCE", (
+            f"a missing /dev/kvm should classify as INFRA_RESOURCE, got {v.category}"
         )
 
     def test_copilot_bot_job_is_not_filtered_like_total_success(self):
