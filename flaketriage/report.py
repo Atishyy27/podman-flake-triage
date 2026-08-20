@@ -55,11 +55,28 @@ def render(rows: list[Row], sampled_runs: int) -> str:
         return "# Podman CI flake triage\n\nNo failed jobs found in the sampled window.\n"
 
     by_cat = Counter(r.verdict.category for r in rows)
-    recurring: dict[tuple[str, str], list[Row]] = defaultdict(list)
-    for r in rows:
-        recurring[(_job_family(r.job_name), r.verdict.category)].append(r)
 
-    repeated = {k: v for k, v in recurring.items() if len(v) > 1}
+    # Recurrence is per FAILING TEST, not per job lane. Grouping by lane answers
+    # "how often does this lane go red", which is not the same question and is much
+    # less useful: a lane can fail seven times on seven different tests and none of
+    # them is a flake. What a maintainer wants is the same test failing repeatedly.
+    #
+    # And it has to be the same test failing in DIFFERENT runs. Podman's CI fans one
+    # commit across a large OS/mode matrix, so a PR that genuinely breaks a test
+    # produces a dozen failures of that test from a single push. That is a regression
+    # in that PR, not a flake, and counting the matrix entries makes it look like the
+    # noisiest flake in the repo. Deduplicating by run before counting is what
+    # separates the two.
+    per_test: dict[tuple[str, str], set[int]] = defaultdict(set)
+    example: dict[tuple[str, str], Row] = {}
+    for r in rows:
+        if r.verdict.category != "TEST_FAILURE" or not r.verdict.evidence:
+            continue
+        key = (_job_family(r.job_name), r.verdict.evidence[:120])
+        per_test[key].add(r.run_id)          # set: one commit's matrix counts once
+        example.setdefault(key, r)
+
+    repeated = {k: v for k, v in per_test.items() if len(v) > 1}
     out: list[str] = []
 
     out.append("# Podman CI flake triage\n")
@@ -85,21 +102,25 @@ def render(rows: list[Row], sampled_runs: int) -> str:
         f"has not been written yet, not a failure that has been explained.\n"
     )
 
-    out.append("\n## Recurring: same lane, same mechanism, more than once\n")
+    out.append("\n## Recurring: the same test failing across different runs\n")
+    out.append(
+        "Counted per failing test, and deduplicated by run, so one commit fanned across "
+        "the CI matrix counts once. A test that fails in several unrelated runs is a "
+        "flake candidate; a test that fails many times in one run is that run's "
+        "regression.\n"
+    )
     if not repeated:
-        out.append("_Nothing recurred in this window._\n")
+        out.append("_No test failed in more than one distinct run in this window._\n")
     else:
-        out.append("| Job lane | Mechanism | Times | Example evidence |")
-        out.append("|---|---|---:|---|")
-        for (lane, cat), items in sorted(
-            repeated.items(), key=lambda kv: -len(kv[1])
-        ):
-            ev = next((i.verdict.evidence for i in items if i.verdict.evidence), "")
-            ev = md_cell(ev)
-            out.append(f"| `{md_cell(lane, 60)}` | `{cat}` | {len(items)} | `{ev}` |")
+        out.append("| Job lane | Failing test | Distinct runs |")
+        out.append("|---|---|---:|")
+        for key, runs in sorted(repeated.items(), key=lambda kv: -len(kv[1])):
+            lane, ev = key
+            out.append(f"| `{md_cell(lane, 40)}` | `{md_cell(ev, 90)}` | {len(runs)} |")
         out.append(
-            "\nThese are the quarantine candidates. A lane that fails the same way "
-            "repeatedly across unrelated PRs is not being broken by those PRs.\n"
+            "\nThese are the quarantine candidates. Before filing any of them, check "
+            "whether the runs belong to different branches: a test that only fails on "
+            "one contributor's PR is that PR's problem, not the project's.\n"
         )
 
     out.append("\n## Every classified failure\n")

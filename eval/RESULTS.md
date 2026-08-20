@@ -24,23 +24,39 @@ Podman test lanes and only inflate the denominator.
 not a failure that has been explained. Any tool of this kind can reach 0% UNKNOWN by
 guessing; the number is only meaningful if it is allowed to be non-zero.
 
-## Recurring lanes
+## Recurring tests
 
-| Job lane | Times | Example evidence |
-|---|---:|---|
-| `int local root` | 7 | `[FAIL] Podman rmi [It] podman image rm - concurrent with shared layers` |
-| `sys remote root` | 5 | `not ok 317 podman detects correct tty size in 3313ms` |
-| `int local rootless` | 3 | `[FAIL] Podman run memory [It] podman run memory test on oomkilled container` |
+Counted **per failing test, deduplicated by run**. An earlier version of this report
+grouped by job lane instead, which answered a different and much weaker question: a lane
+can go red seven times on seven unrelated tests and none of them is a flake. The lane
+number looked impressive and meant very little.
 
-These recur across unrelated PRs, which is the signal that separates a flake from a
-branch that is genuinely broken.
+Deduplicating by run matters just as much. Podman fans one commit across a large OS/mode
+matrix, so a PR that genuinely breaks a test yields a dozen failures of that test from a
+single push. Widening the sample to 50 runs made this concrete: `podman artifact ls`
+failed **26 times**, the largest count in the whole sample, and every one traced to two
+runs on a single branch that was itself reworking `artifact ls` output. That is a
+regression in one PR, not a flake. Two more apparent hot-spots collapsed the same way.
 
-**Are these already tracked?** Podman tracks flakes with a `flakes` label; there are 42
-open. None of the three above matched an open flake-labelled issue *by title*. That is
-weak evidence — they may well be tracked under different wording, and title matching is
-not a real check. **Not claiming these are undiscovered.** Confirming that properly means
-reading the 42 issues, which is exactly the kind of manual triage this tool is meant to
-reduce, and is listed as follow-up work rather than asserted as a finding.
+After correcting for both, the 25-run sample yields exactly one genuine candidate:
+
+| Job lane | Failing test | Distinct runs |
+|---|---|---:|
+| `int local root` | `[FAIL] Podman rmi [It] podman image rm - concurrent with shared layers` | 2 |
+
+Both occurrences are on **pushes to `main`**, roughly 7.5 hours apart, so neither is
+attributable to any contributor's branch. Widening to 50 runs did not add a third, which
+is consistent with a real but rare failure rather than noise.
+
+Prior art: issue **#18659** described this exact race and was closed in 2023 by **#18664**
+("don't remove concurrently with builds"), then locked. The same test is failing the same
+way on trunk again, so the fix regressed or was incomplete.
+
+The other two lanes that looked recurring under the old grouping do not survive it:
+`podman detects correct tty size` is already tracked in open issue **#10710**, where a
+maintainer stated in 2023 that it likely cannot be fixed without a bidirectional conmon
+channel; and `podman run memory test on oomkilled container` appeared exactly once, which
+is not evidence of anything.
 
 ## A third pass: adversarial testing
 

@@ -17,20 +17,15 @@ Sampled the **25** most recent failed workflow runs in `podman-container-tools/p
 `UNKNOWN` is 2% of the sample. That number is the honest measure of how far the rules go; every entry in it is a rule that has not been written yet, not a failure that has been explained.
 
 
-## Recurring: same lane, same mechanism, more than once
+## Recurring: the same test failing across different runs
 
-| Job lane | Mechanism | Times | Example evidence |
-|---|---|---:|---|
-| `int local root` | `TEST_FAILURE` | 7 | `[FAIL] Podman rmi [It] podman image rm - concurrent with shared layers` |
-| `sys remote root` | `TEST_FAILURE` | 5 | `not ok 317 \|450\| podman detects correct tty size in 3313ms` |
-| `int local rootless` | `TEST_FAILURE` | 3 | `[FAIL] Podman run memory [It] podman run memory test on oomkilled container` |
-| `macos machine applehv` | `TEST_FAILURE` | 3 | `[FAIL] podman machine rm [It] Remove running machine` |
-| `sys local rootless` | `TEST_FAILURE` | 3 | `not ok 317 \|450\| podman detects correct tty size in 2846ms` |
-| `build fedora-current` | `BUILD` | 3 | `failed step: Run test on lima` |
-| `Validate source code` | `LINT` | 2 | `##[error]pkg/domain/infra/abi/images.go:29:1: File is not properly formatted (gofumpt)` |
-| `Validate source code` | `BUILD` | 2 | `failed step: Check make vendor is clean` |
+Counted per failing test, and deduplicated by run, so one commit fanned across the CI matrix counts once. A test that fails in several unrelated runs is a flake candidate; a test that fails many times in one run is that run's regression.
 
-These are the quarantine candidates. A lane that fails the same way repeatedly across unrelated PRs is not being broken by those PRs.
+| Job lane | Failing test | Distinct runs |
+|---|---|---:|
+| `int local root` | `[FAIL] Podman rmi [It] podman image rm - concurrent with shared layers` | 2 |
+
+These are the quarantine candidates. Before filing any of them, check whether the runs belong to different branches: a test that only fails on one contributor's PR is that PR's problem, not the project's.
 
 
 ## Every classified failure

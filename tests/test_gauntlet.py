@@ -379,23 +379,21 @@ class TestMarkdownInjection:
             f"name), got {data_line.count('|')}: {data_line!r}"
         )
 
-    def test_BUG_lane_pipe_in_recurring_table_is_NOT_escaped(self):
+    def test_lane_pipe_cannot_inject_a_column_in_recurring_table(self):
+        """The recurring table now counts per failing test and dedupes by run, so a
+        recurring row needs the SAME test failing in two DIFFERENT runs."""
         v1 = classify(extract(_log("--- FAIL: TestA (0.00s)\n")))
-        v2 = classify(extract(_log("--- FAIL: TestB (0.00s)\n")))
+        v2 = classify(extract(_log("--- FAIL: TestA (0.00s)\n")))
         evil_name = "int | local rootless fedora-current / lima"
         rows = [
             Row(1, 2, evil_name, "Test", v1, None, "http://x"),
             Row(2, 3, evil_name, "Test", v2, None, "http://y"),
         ]
         out = render(rows, 2)
-        # FIXED: the lane is now escaped through md_cell, so it can no longer inject a
-        # column. Find the recurring row by its escaped form and assert the row still
-        # has exactly the 5 structural pipes a well-formed row has.
-        recurring_line = next(
-            ln for ln in out.splitlines() if ln.startswith("| `int \\|")
-        )
-        structural = recurring_line.count("|") - recurring_line.count("\\|")
-        assert structural == 5, recurring_line
+        line = next(ln for ln in out.splitlines() if ln.startswith("| `int \\|"))
+        # 3 columns -> 4 structural pipes; escaped ones must not add columns.
+        structural = line.count("|") - line.count("\\|")
+        assert structural == 4, line
 
     def test_BUG_backtick_in_evidence_breaks_inline_code_span(self):
         """CONFIRMED GAP: evidence is escaped for '|' but not for '`'. Evidence
